@@ -1,0 +1,130 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.HttpsPolicy;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SpaServices.ReactDevelopmentServer;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+
+using Korzh.EasyQuery.Services;
+using EasyData.Export;
+
+namespace EqDemo
+{
+    public class Startup
+    {
+        public Startup(IConfiguration configuration, IWebHostEnvironment env)
+        {
+            Configuration = configuration;
+
+            // Set EasyQuery license keys
+            Korzh.EasyQuery.AspNetCore.License.Key = "RHk1jkYkxGvFISrdi1i30xWenZJY192E2cRBcUvu_q4DCUYFNU14KNZ";
+            //Korzh.EasyQuery.AspNetCore.JSLicense.Key = "YourEasyQueryJsTrialKey";
+        }
+        public IConfiguration Configuration { get; }
+
+        // This method gets called by the runtime. Use this method to add services to the container.
+        public void ConfigureServices(IServiceCollection services)
+        {
+            services.AddDbContext<AppDbContext>(options => {
+                options.UseSqlite(Configuration.GetConnectionString("EqDemoSqLite"));
+                //options.UseSqlServer(Configuration.GetConnectionString("EqDemoDb"));
+            });
+
+            services.AddCors(options =>
+            {
+                options.AddPolicy(name: "AllowAllPolicy",
+                    builder => {
+                        builder.AllowAnyOrigin();
+                        builder.AllowAnyHeader();
+                        builder.AllowAnyMethod();
+                        builder.WithExposedHeaders("Content-Disposition");
+                    });
+            });
+
+            services.AddControllersWithViews();
+
+            // In production, the React files will be served from this directory
+            services.AddSpaStaticFiles(configuration =>
+            {
+                configuration.RootPath = "ClientApp/build";
+            });
+
+            services.AddEasyQuery()
+                    .UseSqlManager()
+                    .AddDefaultExporters()
+                    .AddDataExporter<PdfDataExporter>("pdf")
+                    .AddDataExporter<ExcelDataExporter>("excel");
+                
+                  // Uncomment if you want to load model directly from DB               
+                  // .RegisterDbGate<SqLiteGate>();
+                  // .RegisterDbGate<SqlServerGate>();
+
+            //to support non-Unicode code pages in PDF Exporter
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        }
+
+        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        {
+            if (env.IsDevelopment()) {
+                app.UseDeveloperExceptionPage();
+            }
+            else {
+                app.UseExceptionHandler("/Error");
+                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
+                app.UseHsts();
+            }
+
+            app.UseCors("AllowAllPolicy");
+
+            app.UseHttpsRedirection();
+            app.UseStaticFiles();
+            if (!env.IsDevelopment()) {
+                app.UseSpaStaticFiles();
+            }
+
+            app.UseRouting();
+
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapEasyQuery(options => {
+                    options.DefaultModelId = "nwind";
+
+                    options.SaveNewQuery = false;
+
+                    options.UseDbContext<AppDbContext>();
+
+                    // Uncomment if you want to donwload model directly from DB
+                    // options.UseDbConnectionModelLoader();
+
+                    options.UseQueryStore((_) => new FileQueryStore("App_Data"));
+                });
+
+                endpoints.MapControllerRoute(
+                    name: "default",
+                    pattern: "{controller}/{action=Index}/{id?}");
+            });
+
+            app.UseEasyQuery(options => {
+                options.Endpoint = "/api/easyquery";
+                options.UseDbContext<AppDbContext>();
+                //options.UsePaging(25);
+            });
+
+            app.UseSpa(spa =>
+            {
+                spa.Options.SourcePath = "ClientApp";
+
+                if (env.IsDevelopment()) {
+                    spa.UseReactDevelopmentServer(npmScript: "start");
+                }
+            });
+
+            //Init demo database (if necessary)
+            app.EnsureDbInitialized(Configuration, env);
+        }
+    }
+}
